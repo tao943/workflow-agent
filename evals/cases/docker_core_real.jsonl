@@ -1,0 +1,1 @@
+{"id":"docker_real_demo_echo","suite":"docker_core_real","task":"run docker skill echo","mode":"skill","offline":true,"expected_tools":["demo_docker_echo.echo"],"assertions":{"tool_name":"demo_docker_echo.echo","tool_args":{"text":"hello docker"},"contains":["hello docker"]},"requires_services":["docker"]}

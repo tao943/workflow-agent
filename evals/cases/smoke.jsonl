@@ -1,0 +1,2 @@
+{"id":"smoke_calculator","suite":"smoke","task":"计算 1 + 2","mode":"single","agent":"build","offline":true,"expected_tools":["calculator"],"required_sections":["任务执行完成。"]}
+{"id":"smoke_team_project_analysis","suite":"smoke","task":"分析当前项目结构并给出优化建议","mode":"team","team":"default-dev-team","offline":true,"expected_tools":["list_files","read_file","search_files"],"forbidden_tools":["write_file"],"required_sections":["## 当前项目结构分析","## 优化建议"]}

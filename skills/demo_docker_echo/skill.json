@@ -1,0 +1,29 @@
+{
+  "name": "demo_docker_echo",
+  "version": "0.1.0",
+  "description": "A minimal executable skill used to validate Docker sandbox runtime.",
+  "runtime": "docker",
+  "image": "python:3.13-slim",
+  "entrypoint": "main.py",
+  "trust_level": "project",
+  "activation": {
+    "triggers": ["docker skill demo", "sandbox demo"]
+  },
+  "tools": [
+    {
+      "name": "demo_docker_echo.echo",
+      "description": "Echo input text from a restricted Docker skill container.",
+      "parameters": {
+        "text": "Text to echo"
+      },
+      "permissions": ["skill:demo_docker_echo"],
+      "timeout_seconds": 5
+    }
+  ],
+  "filesystem": {
+    "read": ["skill"],
+    "write": ["outputs/skills/demo_docker_echo"]
+  },
+  "network": false,
+  "dependencies": []
+}

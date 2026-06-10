@@ -1,0 +1,168 @@
+{
+  "model": "gpt-4o-mini",
+  "default_agent": "build",
+  "output_dir": "outputs",
+  "checkpoint_path": "outputs/checkpoints/checkpoints.sqlite",
+  "context": {
+    "max_prompt_chars": 12000,
+    "recent_turns": 3,
+    "tool_output_max_chars": 2000,
+    "memory_items": 8
+  },
+  "context_harness": {
+    "enabled": true,
+    "offload_threshold_tokens": 1200,
+    "max_input_tokens": 16000,
+    "reserved_output_tokens": 3000,
+    "summary_trigger_ratio": 0.75,
+    "retrieval_cache_ttl_seconds": 300,
+    "max_retries_per_step": 2,
+    "max_repair_branches": 2,
+    "stagnation_window": 3,
+    "stable_prompt_prefix": true
+  },
+  "memory": {
+    "enabled": true,
+    "namespace": "project",
+    "retrieval_limit": 8,
+    "candidate_limit": 100,
+    "min_active_confidence": 0.7,
+    "semantic_rerank_enabled": false,
+    "consolidation_enabled": true
+  },
+  "evals": {
+    "evaluation_model": "gpt-4o-mini",
+    "enable_deepeval": true,
+    "enable_external_benchmarks": true,
+    "deepeval_mode": "local",
+    "deep_eval_thresholds": {
+      "task_completion": 0.7,
+      "step_efficiency": 0.5,
+      "tool_correctness": 0.8,
+      "argument_correctness": 0.8,
+      "plan_quality": 0.7
+    },
+    "benchmark_output_dir": "outputs/benchmarks"
+  },
+  "benchmarks": {
+    "agentbench_path": "",
+    "claw_eval_path": "",
+    "default_trials": 3,
+    "allow_resource_heavy": false,
+    "protocol_output_dir": "outputs/benchmarks/official"
+  },
+  "mcp": {
+    "enabled": true,
+    "default_action": "ask",
+    "connect_timeout_seconds": 10,
+    "tool_timeout_seconds": 30,
+    "cache_tool_list_seconds": 300,
+    "servers": {
+      "fetch": {
+        "enabled": true,
+        "transport": "stdio",
+        "command": "uvx",
+        "args": ["mcp-server-fetch"],
+        "cwd": ".",
+        "env": {"PYTHONIOENCODING": "utf-8"},
+        "allow_tools": ["fetch"],
+        "deny_tools": [],
+        "allow_resources": [],
+        "trust_level": "project"
+      },
+      "brave": {
+        "enabled": false,
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+        "cwd": ".",
+        "env": {"BRAVE_API_KEY": "${BRAVE_API_KEY}"},
+        "allow_tools": ["brave_web_search", "brave_local_search"],
+        "deny_tools": [],
+        "allow_resources": [],
+        "trust_level": "external"
+      }
+    }
+  },
+  "team_mode": {
+    "enabled": false,
+    "max_parallel_members": 4,
+    "max_members": 8,
+    "max_messages_per_run": 1000,
+    "max_member_turns": 50,
+    "message_payload_max_chars": 12000,
+    "assignment_strategy": "hybrid",
+    "max_assignment_tasks": 8,
+    "llm_assignment_enabled": true,
+    "llm_synthesis_enabled": true,
+    "semantic_routing_enabled": true,
+    "min_route_confidence": 0.65,
+    "max_replans_per_run": 2,
+    "max_repair_tasks": 2,
+    "replan_strategy": "after_layer"
+  },
+  "skill_runtime": {
+    "loading_enabled": true,
+    "code_enabled": true,
+    "allow_global_skills": false,
+    "auto_install_dependencies": false,
+    "default_code_action": "ask",
+    "allowed_runtimes": ["python-subprocess", "docker"],
+    "paths": ["skills"],
+    "docker_enabled": true,
+    "docker_image": "workflow-agent-skill-python:3.13",
+    "docker_allowed_images": ["workflow-agent-skill-python:3.13", "python:3.13-slim"],
+    "docker_network": "none",
+    "docker_memory": "256m",
+    "docker_cpus": "0.5",
+    "docker_pids_limit": 64,
+    "docker_read_only": true,
+    "docker_cap_drop": ["ALL"],
+    "docker_security_opt": ["no-new-privileges:true"]
+  },
+  "permissions": [
+    {"permission": "read", "pattern": "*", "action": "allow"},
+    {"permission": "write", "pattern": "*", "action": "ask"},
+    {"permission": "rag", "pattern": "*", "action": "ask"},
+    {"permission": "web", "pattern": "*", "action": "ask"},
+    {"permission": "shell", "pattern": "*", "action": "deny"},
+    {"permission": "external_directory", "pattern": "*", "action": "deny"},
+    {"permission": "team:create", "pattern": "*", "action": "ask"},
+    {"permission": "team:message", "pattern": "*", "action": "allow"},
+    {"permission": "team:task", "pattern": "*", "action": "allow"},
+    {"permission": "team:delete", "pattern": "*", "action": "ask"},
+    {"permission": "team:external_worktree", "pattern": "*", "action": "deny"},
+    {"permission": "skill", "pattern": "*", "action": "ask"},
+    {"permission": "skill_code", "pattern": "execute", "action": "ask"},
+    {"permission": "network", "pattern": "*", "action": "deny"},
+    {"permission": "dependency_install", "pattern": "*", "action": "deny"}
+  ],
+  "skills": {
+    "core": true,
+    "notes": true,
+    "file_ops": true,
+    "research": true
+  },
+  "tools": {
+    "calculator": true,
+    "datetime_tool": true,
+    "notes_tool": true,
+    "read_file": true,
+    "write_file": true,
+    "list_files": true,
+    "search_files": true,
+    "rag_search": true,
+    "team_create": true,
+    "team_list": true,
+    "team_status": true,
+    "team_delete": true,
+    "team_send_message": true,
+    "team_task_create": true,
+    "team_task_list": true,
+    "team_task_get": true,
+    "team_task_update": true,
+    "team_shutdown_request": true,
+    "team_approve_shutdown": true,
+    "team_reject_shutdown": true
+  }
+}

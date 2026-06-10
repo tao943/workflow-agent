@@ -1,0 +1,1 @@
+{"id":"prompt_contract_sections","suite":"prompt_contract","task":"prompt contract","mode":"prompt_contract","offline":true,"assertions":{"contains":["Output Schema","Forbidden Claims","evidence_ids","suggested_graph"]}}

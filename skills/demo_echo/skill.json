@@ -1,0 +1,28 @@
+{
+  "name": "demo_echo",
+  "version": "0.1.0",
+  "description": "A minimal executable skill used to validate skill plugin runtime.",
+  "runtime": "python-subprocess",
+  "entrypoint": "main.py",
+  "trust_level": "project",
+  "activation": {
+    "triggers": ["demo echo", "skill demo"]
+  },
+  "tools": [
+    {
+      "name": "demo_echo.echo",
+      "description": "Echo input text from a controlled skill subprocess.",
+      "parameters": {
+        "text": "Text to echo"
+      },
+      "permissions": ["skill:demo_echo"],
+      "timeout_seconds": 5
+    }
+  ],
+  "filesystem": {
+    "read": ["project"],
+    "write": ["outputs/skills/demo_echo"]
+  },
+  "network": false,
+  "dependencies": []
+}

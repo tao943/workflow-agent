@@ -1,0 +1,1 @@
+{"id":"rag_no_answer_evidence","suite":"rag_core","task":"检索知识库 LangGraph checkpoint","mode":"rag","agent":"research","offline":true,"expected_tools":["rag_search"],"grading_policy":"weighted","pass_threshold":0.8,"metric_weights":{"no_answer_evidence_honesty":3.0,"expected_tools":2.0,"source_presence":1.0},"assertions":{"expect_no_answer_evidence":true}}

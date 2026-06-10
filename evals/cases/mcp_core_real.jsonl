@@ -1,0 +1,1 @@
+{"id":"mcp_real_fetch_example","suite":"mcp_core_real","task":"fetch real URL","mode":"mcp","offline":true,"expected_tools":["mcp.fetch.fetch"],"required_sections":[],"assertions":{"real_fetch":true,"url":"https://example.com","contains":["Example Domain"]},"requires_services":["mcp_fetch"]}

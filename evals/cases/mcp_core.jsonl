@@ -1,0 +1,2 @@
+{"id":"mcp_static_fetch_available","suite":"mcp_core","task":"fetch availability","mode":"tool_provider","offline":true,"expected_tools":["mcp.fetch.fetch"],"assertions":{"contains":["mcp.fetch.fetch"]}}
+{"id":"mcp_fetch_rejects_file_url","suite":"mcp_core","task":"fetch invalid url","mode":"mcp","offline":true,"expected_tools":["mcp.fetch.fetch"],"assertions":{"invalid_url":true,"contains":["invalid URL"]}}
