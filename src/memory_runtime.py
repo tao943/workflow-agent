@@ -662,6 +662,14 @@ class MemoryGovernanceRuntime:
             self.storage.add_event(session_id, "memory.consolidated", {"records": len(records)})
         return records
 
+    def evaluate_candidates(self, candidates: list[MemoryCandidate], session_id: str = "") -> list[MemoryRecord]:
+        records = [self.policy.evaluate(candidate) for candidate in candidates]
+        if self.storage and session_id:
+            for record in records:
+                event = "memory.promoted" if record.status == "active" else "memory.candidate.created"
+                self.storage.add_event(session_id, event, asdict(record))
+        return records
+
     def hot_write_user_task(self, user_task: str, namespace: str = "project", session_id: str = "") -> MemoryRecord | None:
         preference = self.consolidator._explicit_preference(user_task)
         if not preference:

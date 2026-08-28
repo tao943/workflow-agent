@@ -508,6 +508,27 @@ class TeamRuntime:
             return payload
 
         member_config = self.config.model_copy(update={"default_agent": member.profile})
+        remote_cfg = self.config.a2a.agents.get(member.role) if hasattr(self.config, "a2a") else None
+        if self.config.a2a.enabled and remote_cfg and remote_cfg.enabled and member.role in {"researcher", "builder", "reviewer"}:
+            from src.a2a_runtime import A2AAgentRegistry
+            import httpx
+            session_id = self._member_session_id(team_run_id, member.name)
+            try:
+                remote = A2AAgentRegistry(self.config.a2a).resolve(member.role)
+                response = httpx.post(remote.base_origin + "/a2a/rest/v1/message:send", headers={"Authorization": remote.authorization_header}, json={"role": member.role, "task": item["description"], "team_run_id": team_run_id, "task_id": item["logical_id"]}, timeout=self.config.a2a.request_timeout_seconds)
+                response.raise_for_status()
+                body = response.json()
+                payload = {"member": member.name, "role": member.role, "status": body.get("status", "completed"), "session_id": session_id, "final_answer": body.get("result", ""), "acceptance": {"passed": True, "issues": []}, "artifacts": [], "evidence": evidence, "execution_mode": "a2a", "task_metadata": item.get("metadata") or {}}
+                payload["member_report"] = self._member_report(item, payload)
+                self.storage.update_team_task(item["id"], "completed", str(payload["final_answer"]), member.name, "satisfied")
+                self.storage.update_team_member(team_run_id, member.name, "completed")
+                self.storage.add_team_member_run(new_id("member_run"), team_run_id, member.name, session_id, "completed", payload)
+                return payload
+            except Exception as exc:
+                if not (member.role in {"researcher", "reviewer"} and remote_cfg.allow_local_fallback):
+                    self.storage.update_team_task(item["id"], "blocked", "", member.name, "missing")
+                    self.storage.update_team_member(team_run_id, member.name, "blocked")
+                    return {"member": member.name, "role": member.role, "status": "blocked", "session_id": session_id, "final_answer": "", "acceptance": {"passed": False, "issues": [str(exc)]}, "artifacts": [], "evidence": evidence, "execution_mode": "a2a", "error": str(exc)}
         runtime = self._agent_runtime(member_config)
         inherited_evidence = evidence or self._team_evidence_summary(team_run_id)
         task_description = self._with_evidence_summary(item["description"], inherited_evidence)
