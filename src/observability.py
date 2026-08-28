@@ -123,6 +123,7 @@ class OpenTelemetryTraceProvider(JsonlTraceProvider):
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
         resource = Resource.create({"service.name": service_name})
         provider = TracerProvider(resource=resource)
+        self._tracer_provider = provider
         if otlp_endpoint:
             try:
                 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
