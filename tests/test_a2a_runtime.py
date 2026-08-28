@@ -54,3 +54,19 @@ def test_a2a_client_preserves_execution_identity(monkeypatch):
     result = A2AClientRuntime(A2AAgentRegistry(config)).execute(request)
     assert result.execution_mode == "a2a"
     assert result.remote_task_id == "remote-1"
+
+
+def test_a2a_client_does_not_resubmit_completed_execution(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("httpx.post", lambda *a, **k: calls.append(1))
+    from src.a2a_runtime import A2AClientRuntime
+    from src.member_execution import MemberTaskRequest
+    from src.storage import Storage
+    monkeypatch.setenv("TOK", "secret")
+    config = A2AConfig(enabled=True, agents={"researcher": A2ARemoteAgentConfig(enabled=True, agent_card_url="http://127.0.0.1:8101/.well-known/agent-card.json", token_env="TOK")})
+    storage = Storage(tmp_path / "a.sqlite")
+    storage.upsert_a2a_task(team_run_id="run", logical_task_id="research", role="researcher", business_attempt=0, execution_id="exec-1", idempotency_key="run:research:0", transport_retry_count=0, context_id="ctx", remote_task_id="remote", endpoint="http://127.0.0.1:8101", status="completed")
+    request = MemberTaskRequest("run", "task", "research", "researcher", "researcher", "research", "t", "d", [], [], "", "s", True, "default", True, ".", "exec-1", "run:research:0")
+    result = A2AClientRuntime(A2AAgentRegistry(config), storage=storage).execute(request)
+    assert result.remote_task_id == "remote"
+    assert calls == []

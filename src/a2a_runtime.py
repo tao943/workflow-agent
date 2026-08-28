@@ -84,18 +84,49 @@ class A2AAgentRegistry:
 
 
 class A2AClientRuntime:
-    def __init__(self, registry: A2AAgentRegistry, timeout: float = 30.0):
-        self.registry, self.timeout = registry, timeout
+    def __init__(self, registry: A2AAgentRegistry, timeout: float = 30.0, storage=None, trace_provider=None):
+        self.registry, self.timeout, self.storage = registry, timeout, storage
+        self.trace_provider = trace_provider
 
     def execute(self, request):
         import httpx
         from src.member_execution import MemberExecutionResult
         agent = self.registry.resolve(request.role)
+        if self.storage and request.execution_id:
+            existing = self.storage.get_a2a_task_by_execution_id(request.execution_id)
+            if existing and existing.get("status") in {"completed", "working", "submitted"}:
+                if existing.get("status") == "completed":
+                    return MemberExecutionResult(request.member_name, request.role, "completed", "", {"passed": True, "issues": []}, [], [], [], "a2a", remote_context_id=existing.get("context_id", ""), remote_task_id=existing.get("remote_task_id", ""))
         payload = {"role": request.role, "task": request.description, "team_run_id": request.team_run_id, "task_id": request.logical_task_id, "execution_id": request.execution_id, "idempotency_key": request.idempotency_key, "workspace_root": agent.workspace_root}
-        response = httpx.post(agent.base_origin + "/a2a/rest/v1/message:send", headers={"Authorization": agent.authorization_header}, json=payload, timeout=self.timeout)
+        headers = {"Authorization": agent.authorization_header}
+        if self.trace_provider:
+            self.trace_provider.inject(headers)
+        if self.storage and request.execution_id:
+            self.storage.upsert_a2a_task(team_run_id=request.team_run_id, logical_task_id=request.logical_task_id, role=request.role, business_attempt=request.business_attempt, execution_id=request.execution_id, idempotency_key=request.idempotency_key, transport_retry_count=request.transport_retry_count, context_id="", remote_task_id="", endpoint=agent.base_origin, status="submitted")
+        response = httpx.post(agent.base_origin + "/a2a/rest/v1/message:send", headers=headers, json=payload, timeout=self.timeout)
         response.raise_for_status()
         body = response.json()
+        if self.storage and request.execution_id:
+            self.storage.upsert_a2a_task(team_run_id=request.team_run_id, logical_task_id=request.logical_task_id, role=request.role, business_attempt=request.business_attempt, execution_id=request.execution_id, idempotency_key=request.idempotency_key, transport_retry_count=request.transport_retry_count, context_id=body.get("context_id", ""), remote_task_id=body.get("task_id", ""), endpoint=agent.base_origin, status=body.get("status", "completed"))
         return MemberExecutionResult(request.member_name, request.role, body.get("status", "completed"), str(body.get("result", "")), {"passed": True, "issues": []}, [], body.get("artifacts", []), [], "a2a", remote_context_id=body.get("context_id", ""), remote_task_id=body.get("task_id", ""))
+
+    async def execute_official_sdk(self, request):
+        """Execute through the official A2A SDK client and normalize terminal events."""
+        import httpx
+        from a2a.client import A2ACardResolver, ClientConfig, create_client
+        from a2a.types import Message, Part, Role, SendMessageRequest
+        agent = self.registry.resolve(request.role)
+        async with httpx.AsyncClient(headers={"Authorization": agent.authorization_header}, timeout=self.timeout, follow_redirects=False) as http_client:
+            resolver = A2ACardResolver(http_client, agent.base_origin)
+            card = await resolver.get_agent_card()
+            client = await create_client(card, client_config=ClientConfig(httpx_client=http_client, supported_protocol_bindings=["HTTP+JSON"]))
+            message = Message(role=Role.ROLE_USER, message_id=request.execution_id or request.task_id, context_id=request.team_run_id, task_id=None, parts=[Part(text=request.description)])
+            events = client.send_message(SendMessageRequest(message=message))
+            final = None
+            async for event in events:
+                final = event
+            await client.close()
+            return final
 
 
 def resolve_workspace_path(workspace_root: str, requested: str) -> Path:
