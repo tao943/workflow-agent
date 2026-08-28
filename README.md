@@ -276,3 +276,22 @@ python -m src.main --doctor-observability --format json
 ```
 
 Trace 默认写入 `outputs/traces/agent.jsonl`；设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后可接入 OTLP。LangMem 只生成候选记忆，最终仍由 `MemoryPolicyGate` 决定是否激活。Builder 远程失败不会自动在 Lead 工作区重做。
+
+## 本地 OTLP + Jaeger
+
+开发和集成测试可以使用项目附带的 Docker Compose 观测栈：
+
+```powershell
+docker compose -f docker-compose.otel.yml up -d
+$env:OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318/v1/traces"
+$env:OTEL_SERVICE_NAME="workflow-agent"
+python -m src.main --doctor-observability --format json
+```
+
+Jaeger UI 位于 [http://127.0.0.1:16686](http://127.0.0.1:16686)。Collector 接收 OTLP HTTP `4318` 和 gRPC `4317`，再转发到 Jaeger。停止服务：
+
+```powershell
+docker compose -f docker-compose.otel.yml down
+```
+
+该 Compose 文件用于本地开发/集成测试，不提供生产级持久化、TLS 或认证；生产环境应使用受保护的远程 Collector。
