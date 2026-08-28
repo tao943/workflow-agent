@@ -59,3 +59,11 @@ class LocalMemberExecutor:
         if isinstance(result, MemberExecutionResult):
             return result
         return MemberExecutionResult(request.member_name, request.role, "completed", str(result), {"passed": True}, [], [], [], "local")
+
+
+class A2AMemberExecutor:
+    def __init__(self, client):
+        self.client = client
+
+    def execute(self, request: MemberTaskRequest) -> MemberExecutionResult:
+        return self.client.execute(request)

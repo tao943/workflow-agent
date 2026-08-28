@@ -263,3 +263,16 @@ python -m src.main "检索知识库中的 checkpoint 资料" --agent research --
 ## 说明
 
 本项目用于学习和实践 Agent Runtime 工程化，不建议直接用于生产环境。若接入外部 API、MCP Server、Skill 代码或 Docker 沙箱，请先确认权限规则和本地环境安全边界。
+# A2A 角色服务
+
+Researcher、Builder、Reviewer 可作为独立 HTTP 进程运行。配置 `agent_config.json` 中的 `a2a.agents.<role>.workspace_root` 必须指向绝对隔离目录；Token 仅通过 `A2A_<ROLE>_TOKEN` 环境变量提供。非回环端点使用 HTTPS，明文 HTTP 仅用于本机开发。
+
+```powershell
+python -m src.main --serve-a2a-role researcher --host 127.0.0.1 --port 8101
+python -m src.main --serve-a2a-role builder --host 127.0.0.1 --port 8102
+python -m src.main --serve-a2a-role reviewer --host 127.0.0.1 --port 8103
+python -m src.main --a2a-agents --format json
+python -m src.main --doctor-observability --format json
+```
+
+Trace 默认写入 `outputs/traces/agent.jsonl`；设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后可接入 OTLP。LangMem 只生成候选记忆，最终仍由 `MemoryPolicyGate` 决定是否激活。Builder 远程失败不会自动在 Lead 工作区重做。

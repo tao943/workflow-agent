@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import mimetypes
 from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -25,6 +27,42 @@ class A2ARuntimeError(RuntimeError):
         self.code, self.retryable, self.details = code, retryable, details or {}
 
 
+@dataclass(frozen=True)
+class RemoteArtifactManifest:
+    artifact_id: str
+    name: str
+    url: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+
+
+class A2AArtifactTransport:
+    ALLOWED_MIME = {"text/plain", "text/markdown", "application/json", "text/x-diff", "application/zip", "application/octet-stream"}
+
+    def __init__(self, output_dir: str | Path, max_bytes: int = 50 * 1024 * 1024, fetcher=None):
+        self.output_dir = Path(output_dir).resolve()
+        self.max_bytes = max_bytes
+        self.fetcher = fetcher
+
+    def download(self, manifest: RemoteArtifactManifest, authorization_header: str = "") -> dict:
+        parsed = urlparse(manifest.url)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise A2ARuntimeError("artifact_error", "artifact origin is not allowed")
+        if manifest.mime_type not in self.ALLOWED_MIME or manifest.size_bytes > self.max_bytes:
+            raise A2ARuntimeError("artifact_error", "artifact size or MIME is not allowed")
+        data = self.fetcher(manifest.url, {"Authorization": authorization_header}) if self.fetcher else b""
+        if len(data) > self.max_bytes or len(data) != manifest.size_bytes:
+            raise A2ARuntimeError("artifact_error", "artifact size mismatch")
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != manifest.sha256:
+            raise A2ARuntimeError("artifact_error", "artifact sha256 mismatch")
+        target = resolve_workspace_path(str(self.output_dir), manifest.name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        return {"artifact_id": manifest.artifact_id, "file_path": str(target), "mime_type": manifest.mime_type, "size_bytes": len(data), "sha256": digest}
+
+
 class A2AAgentRegistry:
     def __init__(self, config):
         self.config = config
@@ -43,6 +81,21 @@ class A2AAgentRegistry:
             raise A2ARuntimeError("configuration_error", "A2A token environment variable is missing")
         origin = f"{parsed.scheme}://{parsed.netloc}"
         return ResolvedA2AAgent(role, origin, agent.agent_card_url, f"Bearer {token}", agent.allow_local_fallback, agent.workspace_root)
+
+
+class A2AClientRuntime:
+    def __init__(self, registry: A2AAgentRegistry, timeout: float = 30.0):
+        self.registry, self.timeout = registry, timeout
+
+    def execute(self, request):
+        import httpx
+        from src.member_execution import MemberExecutionResult
+        agent = self.registry.resolve(request.role)
+        payload = {"role": request.role, "task": request.description, "team_run_id": request.team_run_id, "task_id": request.logical_task_id, "execution_id": request.execution_id, "idempotency_key": request.idempotency_key, "workspace_root": agent.workspace_root}
+        response = httpx.post(agent.base_origin + "/a2a/rest/v1/message:send", headers={"Authorization": agent.authorization_header}, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+        body = response.json()
+        return MemberExecutionResult(request.member_name, request.role, body.get("status", "completed"), str(body.get("result", "")), {"passed": True, "issues": []}, [], body.get("artifacts", []), [], "a2a", remote_context_id=body.get("context_id", ""), remote_task_id=body.get("task_id", ""))
 
 
 def resolve_workspace_path(workspace_root: str, requested: str) -> Path:

@@ -1,5 +1,6 @@
 import pytest
-from src.a2a_runtime import A2AAgentRegistry, A2ARuntimeError, resolve_workspace_path
+from src.a2a_runtime import A2AAgentRegistry, A2ARuntimeError, resolve_workspace_path, A2AArtifactTransport, RemoteArtifactManifest
+import hashlib
 from src.config import A2AConfig, A2ARemoteAgentConfig
 from src.storage import Storage
 
@@ -29,3 +30,27 @@ def test_registry_rejects_builder_fallback():
 def test_workspace_path_rejects_traversal(tmp_path):
     with pytest.raises(A2ARuntimeError, match="workspace"):
         resolve_workspace_path(str(tmp_path), "../outside.txt")
+
+
+def test_artifact_transport_validates_hash_and_size(tmp_path):
+    data = b"artifact"
+    manifest = RemoteArtifactManifest("a1", "x.txt", "http://127.0.0.1:8101/artifacts/a1", "text/plain", len(data), hashlib.sha256(data).hexdigest())
+    transport = A2AArtifactTransport(tmp_path, max_bytes=100, fetcher=lambda url, headers: data)
+    saved = transport.download(manifest, "Bearer token")
+    assert saved["sha256"] == manifest.sha256
+    assert (tmp_path / "x.txt").read_bytes() == data
+
+
+def test_a2a_client_preserves_execution_identity(monkeypatch):
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return {"status": "completed", "result": "ok", "task_id": "remote-1"}
+    monkeypatch.setattr("httpx.post", lambda *a, **k: Response())
+    from src.a2a_runtime import A2AClientRuntime
+    from src.member_execution import MemberTaskRequest
+    monkeypatch.setenv("TOK", "secret")
+    config = A2AConfig(enabled=True, agents={"researcher": A2ARemoteAgentConfig(enabled=True, agent_card_url="http://127.0.0.1:8101/.well-known/agent-card.json", token_env="TOK")})
+    request = MemberTaskRequest("run", "task", "research", "researcher", "researcher", "research", "t", "d", [], [], "", "s", True, "default", True, ".", "exec-1", "run:research:0")
+    result = A2AClientRuntime(A2AAgentRegistry(config)).execute(request)
+    assert result.execution_mode == "a2a"
+    assert result.remote_task_id == "remote-1"
