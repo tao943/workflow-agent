@@ -1,5 +1,5 @@
 import pytest
-from src.a2a_runtime import A2AAgentRegistry, A2ARuntimeError
+from src.a2a_runtime import A2AAgentRegistry, A2ARuntimeError, resolve_workspace_path
 from src.config import A2AConfig, A2ARemoteAgentConfig
 from src.storage import Storage
 
@@ -24,3 +24,8 @@ def test_registry_rejects_builder_fallback():
     config = A2AConfig(enabled=True, agents={"builder": A2ARemoteAgentConfig(enabled=True, agent_card_url="http://127.0.0.1:8102/.well-known/agent-card.json", token_env="T", allow_local_fallback=True)})
     with pytest.raises(A2ARuntimeError):
         A2AAgentRegistry(config).resolve("builder")
+
+
+def test_workspace_path_rejects_traversal(tmp_path):
+    with pytest.raises(A2ARuntimeError, match="workspace"):
+        resolve_workspace_path(str(tmp_path), "../outside.txt")

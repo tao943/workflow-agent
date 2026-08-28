@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -42,3 +43,14 @@ class A2AAgentRegistry:
             raise A2ARuntimeError("configuration_error", "A2A token environment variable is missing")
         origin = f"{parsed.scheme}://{parsed.netloc}"
         return ResolvedA2AAgent(role, origin, agent.agent_card_url, f"Bearer {token}", agent.allow_local_fallback, agent.workspace_root)
+
+
+def resolve_workspace_path(workspace_root: str, requested: str) -> Path:
+    """Resolve a role file path and reject traversal or symlink escapes."""
+    root = Path(workspace_root).expanduser().resolve()
+    candidate = (root / requested).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise A2ARuntimeError("workspace_escape", "path escapes workspace root") from exc
+    return candidate
