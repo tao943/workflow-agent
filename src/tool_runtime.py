@@ -11,6 +11,7 @@ from src.permissions import evaluate_permission, request_permission
 from src.session import new_id
 from src.storage import Storage
 from src.tools.registry import TOOL_REGISTRY, ToolContext, ToolResult, execute_tool
+from src.observability import NoOpTraceProvider
 
 
 @dataclass
@@ -34,10 +35,12 @@ class ToolRuntime:
         artifact_dir: str | Path = "outputs/artifacts",
         context_harness: ContextHarness | None = None,
         context_config: ContextHarnessConfig | None = None,
+        trace_provider=None,
     ) -> None:
         self.artifact_dir = Path(artifact_dir)
         self.context_harness = context_harness
         self.context_config = context_config or ContextHarnessConfig()
+        self.trace_provider = trace_provider or NoOpTraceProvider()
 
     def run(self, request: ToolRunRequest) -> tuple[ToolResult, list[dict[str, Any]]]:
         approvals: list[dict[str, Any]] = []
@@ -123,7 +126,9 @@ class ToolRuntime:
 
         storage.add_event(request.session_id, "tool.started", {"tool": request.name, "step_id": request.step_id, "input": effective_args})
         start = time.perf_counter()
-        result = execute_tool(request.name, effective_args, request.context)
+        with self.trace_provider.start_span("tool.run", {"tool.name": request.name, "tool.schema_hash": getattr(tool, "schema_hash", "")}) as span:
+            result = execute_tool(request.name, effective_args, request.context)
+            span.set_attribute("tool.status", result.status)
         duration_ms = int((time.perf_counter() - start) * 1000)
         result = self._finalize_result(request.name, result, tool.truncate_policy.get("max_chars", 4000), duration_ms)
         if provenance:

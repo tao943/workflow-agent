@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from src.config import AppConfig, MCPServerConfig
 from src.tools.registry import OUTPUT_SCHEMA, ToolContext, ToolResult, ToolSpec, register_tools
+from src.observability import NoOpTraceProvider
 
 
 @dataclass(frozen=True)
@@ -39,9 +40,11 @@ class MCPClientManager:
         self,
         config: AppConfig,
         client_factory: Callable[[str, MCPServerConfig], Any] | None = None,
+        trace_provider=None,
     ) -> None:
         self.config = config
         self.client_factory = client_factory
+        self.trace_provider = trace_provider or NoOpTraceProvider()
         self._tool_cache: dict[str, list[MCPToolInfo]] = {}
         self._errors: dict[str, str] = {}
 
@@ -98,7 +101,9 @@ class MCPClientManager:
                 metadata={"code": "mcp_tool_not_allowed", "mcp_server": server_name, "mcp_tool": tool_name},
             )
         try:
-            result = self._call_server_tool(server_name, server, tool_name, args)
+            with self.trace_provider.start_span("mcp.call", {"mcp.server": server_name, "mcp.tool": tool_name}) as span:
+                result = self._call_server_tool(server_name, server, tool_name, args)
+                span.set_attribute("mcp.status", result.status)
         except Exception as exc:
             return ToolResult(
                 title=f"MCP {tool_name} failed",
