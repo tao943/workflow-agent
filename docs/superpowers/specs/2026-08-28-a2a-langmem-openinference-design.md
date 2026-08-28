@@ -12,10 +12,10 @@
 
 ## 2. 已确认约束
 
-- Researcher、Builder、Reviewer 以独立 HTTP 进程部署，可位于不同机器。
+- Researcher、Builder、Reviewer 以独立 HTTP 进程部署，可位于不同机器；非回环地址默认必须使用 HTTPS。
 - Lead/`TeamRuntime` 是 A2A 客户端和唯一 DAG 编排者。
 - A2A 服务使用静态 Bearer Token；配置只保存 Token 环境变量名。
-- 每个角色服务使用独立工作目录，不共享网络目录。
+- 每个角色服务使用独立的绝对工作区根目录，不共享网络目录，也不依赖进程 CWD。
 - 小结果内联；大文件通过受 Bearer Token 保护的 Artifact URL 返回。
 - Researcher/Reviewer 远程失败后允许本地降级；Builder 不允许自动本地降级。
 - 长期记忆由 Lead 集中治理，并按角色隔离命名空间。
@@ -62,7 +62,7 @@ TeamRuntime / Lead
 
 ### 4.1 MemberExecutor
 
-`MemberExecutor` 接收逻辑任务、成员配置、运行上下文和超时配置，返回统一的 `MemberExecutionResult`。结果必须包含：
+`MemberExecutor` 接收逻辑任务、成员配置、绝对工作区根目录、运行上下文和超时配置，返回统一的 `MemberExecutionResult`。工作区根目录沿 `MemberTaskRequest -> RuntimeOptions -> Agent state -> ToolContext` 显式传播；所有文件工具必须做根目录包含检查并拒绝路径穿越和符号链接逃逸。结果必须包含：
 
 - 执行状态；
 - 最终回答或错误；
@@ -123,7 +123,7 @@ Lead 必须验证：
 - Acceptance Criteria；
 - 输入 Artifact 引用；
 - Deadline；
-- `team_run_id`、逻辑任务 ID 和 Attempt。
+- `team_run_id`、逻辑任务 ID、业务 Attempt、稳定 `execution_id` 和幂等键。
 
 远程 Agent 无权修改 Lead 的 DAG、权限规则、系统约束或其他成员配置。
 
@@ -139,7 +139,7 @@ team_run_id
         -> trace_id / span_id
 ```
 
-Lead 使用 `team_run_id + logical_task_id + attempt` 生成幂等键。网络超时后，Lead 必须先查询已有远程任务状态，不能直接重复提交可能产生副作用的 Builder 任务。
+Lead 使用 `team_run_id + logical_task_id + business_attempt` 生成稳定的 `execution_id` 和幂等键。业务 Attempt 与传输重试严格分离：网络重试只增加 `transport_retry_count`，不得改变执行身份。Lead 在首次发送前持久化映射；网络超时或 Lead 重启后必须按同一 `execution_id` 查询并恢复已有远程任务，不能直接重复提交可能产生副作用的 Builder 任务。只有新的业务 Attempt 才能生成新的执行身份。
 
 ### 5.4 状态映射
 
@@ -159,13 +159,14 @@ A2A 状态统一映射到项目状态：
 ## 6. 认证与安全
 
 - Bearer Token 只通过环境变量读取。
+- 明文 HTTP 仅允许回环地址。非回环端点必须使用 HTTPS；开发环境如确需明文连接，必须显式设置默认关闭的 `allow_insecure_http`，并产生安全告警。
 - Agent Card、配置导出、事件、Trace、错误和 Memory 中不得出现 Token。
 - 所有异常在持久化前经过统一 Secret Redactor。
 - A2A 响应、Agent Card、远程文本和 Artifact 一律视为不可信输入。
 - 第一阶段不允许远程 Agent 再委派其他 Agent。
 - Lead 不接受远程权限规则、系统提示或 DAG 更新。
 - Builder 的写入仍由 Builder 本地 `PermissionRule` 和 `ToolRuntime` 控制。
-- A2A HTTP 服务应支持只监听指定 Host；默认示例监听 `127.0.0.1`，跨机器部署由用户显式配置网络边界。
+- A2A HTTP 服务应支持只监听指定 Host；默认示例监听 `127.0.0.1`，跨机器部署由用户显式配置 TLS 与网络边界。
 
 ## 7. Artifact 传输
 
@@ -233,6 +234,8 @@ Lead 可以在 Context Assembly 时跨角色检索，但不复制原始记录，
 ### 9.3 激活规则
 
 - 无 Evidence 的远程推断最多成为 candidate。
+- LangMem 每个候选必须声明自己的 Evidence ID/Source Ref；Lead 只保留与已验收 Evidence Card 相交的引用，禁止把本轮全部 Evidence 批量赋给每个候选。
+- 候选声明的 Evidence 无法匹配时，清空其 Evidence 归因、信任级别降为 `model_inference`、置信度上限为 0.4，并保持 candidate。
 - 工具结果生成的 semantic candidate 必须关联 Tool Evidence。
 - Reviewer 验收通过且证据完整的经验才可成为 active procedural memory。
 - 明确用户偏好保持最高信任级别。
@@ -274,6 +277,8 @@ agent.run
 
 禁止记录：API Key、Bearer Token、未脱敏完整 Prompt、敏感工具参数、大文件正文和完整 Memory 内容。
 
+Lead 在所有 A2A HTTP 请求上注入标准 W3C `traceparent` 和可选 `tracestate`；角色服务在创建远程 Span 前提取上下文，使 Lead、远程 Agent、Tool 与 Artifact 共享同一个 Trace ID。传播头不得进入任务正文、持久化记录或日志。
+
 未配置 OTLP Endpoint 时写入 `outputs/traces/agent.jsonl`。OTLP 初始化或导出失败时记录 `trace_export_error` 并继续业务流程。
 
 ## 11. 配置设计
@@ -285,6 +290,7 @@ agent.run
     "request_timeout_seconds": 30,
     "task_timeout_seconds": 600,
     "max_retries": 2,
+    "allow_insecure_http": false,
     "artifact_max_bytes": 52428800,
     "agents": {
       "researcher": {
@@ -353,9 +359,10 @@ CLI 增加：
 - Agent Card 角色、Origin、协议和能力检查；
 - A2A 状态映射和非法转换；
 - 幂等键和恢复映射；
+- 业务 Attempt 与传输重试计数分离，Builder 跨超时/Lead 重启不重复提交；
 - Artifact Origin、重定向、大小、MIME 和哈希校验；
 - Researcher/Reviewer 降级及 Builder 阻塞；
-- LangMem 输出到 `MemoryCandidate` 的转换和治理；
+- LangMem 输出到 `MemoryCandidate` 的转换、逐候选 Evidence 归因和治理；
 - Trace Span 层级、敏感字段过滤和 JSONL 降级。
 
 ### 13.2 契约测试
@@ -370,6 +377,8 @@ CLI 增加：
 - Builder 服务不可用时任务阻塞；
 - Lead 恢复后继续原 A2A Task；
 - Trace ID 跨 Lead、远程 Agent、Tool 和 Artifact 保持关联；
+- 三个角色的绝对工作区互相隔离且写入不能越界；
+- LangMem 每个候选只能引用通过 Lead 验证且与自身声明匹配的 Evidence；无匹配项保持 `model_inference/candidate`；
 - LangMem 候选只能通过 Lead 的 Policy Gate 持久化。
 
 ### 13.4 可选真实测试
@@ -380,11 +389,13 @@ CLI 增加：
 
 - Researcher、Builder、Reviewer 均能作为独立 HTTP A2A 服务启动。
 - Lead 能发现、认证、调用和恢复三个远程角色任务。
-- 每个角色使用独立工作目录。
+- 每个角色使用独立绝对工作区，文件工具不依赖 CWD 且无法越界。
+- 同一业务 Attempt 的传输重试和 Lead 重启不会重复执行 Builder。
 - Researcher/Reviewer 能按规则降级，Builder 不会静默本地重做。
 - Artifact 下载经过 Origin、大小、MIME 和 SHA-256 校验。
 - Tool、MCP、Evidence 和权限数据仍通过现有控制面。
 - OpenInference Trace 能写入 JSONL并可选导出 OTLP。
+- W3C Trace Context 能跨 Lead 与角色 HTTP 进程保持 Trace ID。
 - LangMem 候选必须经过现有 Memory Governance 才能持久化。
 - 未配置 A2A、LangMem 或 OTLP 时，现有本地和离线模式保持兼容。
 - 原有核心测试全部通过，并新增 A2A、Tracing 和 LangMem 的单元与集成测试。
