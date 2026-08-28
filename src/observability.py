@@ -132,6 +132,12 @@ class OpenTelemetryTraceProvider(JsonlTraceProvider):
                 pass
         trace.set_tracer_provider(provider)
         self._tracer = trace.get_tracer(service_name)
+        try:
+            from openinference.instrumentation.langchain import LangChainInstrumentor
+            LangChainInstrumentor().instrument(tracer_provider=provider)
+            self.openinference_instrumented = True
+        except Exception:
+            self.openinference_instrumented = False
 
     @contextmanager
     def start_span(self, name: str, attributes: dict[str, Any] | None = None) -> Iterator[_Span]:
