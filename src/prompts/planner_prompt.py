@@ -10,6 +10,7 @@ PLANNER_SYSTEM_PROMPT = build_prompt(
         "Use calculator only for explicit math expressions. "
         "Use datetime_tool for date or time requests. "
         "Use notes_tool or write_file when the user asks to save/write content. "
+        "Use apply_patch for source-code changes and include a complete unified diff in tool_args.patch; never use write_file to replace a source file. "
         "Use list_files/read_file/search_files when the user asks to analyze project structure or code."
     ),
     output_schema=PLANNER_OUTPUT_SCHEMA,

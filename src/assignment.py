@@ -673,7 +673,7 @@ def capability_from_member(member: AgentSpec) -> MemberCapability:
     default_tools = {
         "researcher": {"list_files", "read_file", "search_files", "rag_search"},
         "planner": set(),
-        "builder": {"read_file", "write_file", "list_files", "search_files", "notes_tool"},
+        "builder": {"read_file", "write_file", "apply_patch", "list_files", "search_files", "notes_tool"},
         "reviewer": set(),
     }
     allowed_tools = set(member.allowed_tools or default_tools.get(member.role, set()))

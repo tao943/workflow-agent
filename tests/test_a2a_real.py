@@ -27,12 +27,13 @@ def _start_role(role: str, port: int, token: str, workspace: Path) -> subprocess
 
 
 def _wait_ready(port: int, process: subprocess.Popen) -> None:
+    client = httpx.Client(trust_env=False)
     deadline = time.time() + 15
     while time.time() < deadline:
         if process.poll() is not None:
             raise RuntimeError(process.stderr.read().decode(errors="replace"))
         try:
-            if httpx.get(f"http://127.0.0.1:{port}/health", timeout=0.3).status_code == 200:
+            if client.get(f"http://127.0.0.1:{port}/health", timeout=0.3).status_code == 200:
                 return
         except httpx.HTTPError:
             time.sleep(0.1)
@@ -45,6 +46,7 @@ def test_real_a2a_three_independent_role_processes(tmp_path):
         pytest.skip("Set RUN_REAL_A2A=1 to run real A2A process tests.")
     roles = [("researcher", "research-secret"), ("builder", "builder-secret"), ("reviewer", "review-secret")]
     processes, ports = [], []
+    client = httpx.Client(trust_env=False)
     try:
         for role, token in roles:
             port = _free_port(); ports.append(port)
@@ -53,11 +55,11 @@ def test_real_a2a_three_independent_role_processes(tmp_path):
             _wait_ready(port, process)
         for (role, token), port in zip(roles, ports):
             base = f"http://127.0.0.1:{port}"
-            card = httpx.get(base + "/.well-known/agent-card.json", timeout=2)
+            card = client.get(base + "/.well-known/agent-card.json", timeout=2)
             assert card.status_code == 200
             assert card.json()["skills"][0]["id"] == f"workflow-agent-{role}"
-            assert httpx.post(base + "/a2a/rest/v1/message:send", json={}, timeout=2).status_code == 401
-            response = httpx.post(base + "/a2a/rest/v1/message:send", headers={"Authorization": f"Bearer {token}"}, json={"role": role, "task": "health-check"}, timeout=2)
+            assert client.post(base + "/a2a/rest/v1/message:send", json={}, timeout=2).status_code == 401
+            response = client.post(base + "/a2a/rest/v1/message:send", headers={"Authorization": f"Bearer {token}"}, json={"role": role, "task": "health-check"}, timeout=2)
             assert response.status_code == 200
             assert response.json()["status"] == "completed"
     finally:
@@ -89,11 +91,10 @@ def test_real_otlp_http_export_receives_span():
     import threading
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        provider = OpenTelemetryTraceProvider("outputs/test-otlp.jsonl", otlp_endpoint=f"http://127.0.0.1:{server.server_port}/v1/traces")
+        provider = OpenTelemetryTraceProvider("outputs/test-otlp.jsonl", otlp_endpoint=f"http://127.0.0.1:{server.server_port}/v1/traces", force_flush=True)
         with provider.start_span("integration.test"):
             pass
-        provider._tracer_provider.force_flush()
-        deadline = time.time() + 5
+        deadline = time.time() + 1
         while not received and time.time() < deadline:
             time.sleep(0.1)
         assert received and received[0][0] == "/v1/traces" and received[0][1]

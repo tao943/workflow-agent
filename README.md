@@ -136,6 +136,25 @@ python -m src.main --explain-memory-retrieval "LangGraph checkpoint"
 python -m src.main "临时任务，不读写记忆" --no-memory
 ```
 
+### LangMem 生产链路
+
+LangMem 默认关闭，避免在未配置真实模型时产生额外调用和费用。启用方式：
+
+```json
+{
+  "langmem": {
+    "enabled": true,
+    "fallback_to_rule_consolidator": true,
+    "max_candidates_per_run": 8,
+    "recall_char_limit": 4000
+  }
+}
+```
+
+启用后，Lead 只把状态为 completed 且通过 Evidence Gate 的 Researcher、Builder、Reviewer 结果交给 LangMem。LangMem 使用当前运行的真实 LLM 提取候选，不直接写数据库；候选仍必须经过 `MemoryPolicyGate`，并分别写入 `project:team:researcher`、`project:team:builder`、`project:team:reviewer`。Lead 生成的稳定 Evidence ID 才能激活证据记忆，远程 Agent 自报的 Evidence ID 不会被信任。
+
+后续任务只召回当前角色命名空间中的 active 记忆，最多注入 `recall_char_limit` 个字符，并标记为不可信参考上下文。提取失败时，`fallback_to_rule_consolidator=true` 会按角色使用原有规则式 Consolidator；关闭该选项则记录 `memory_extraction_error` 后继续主任务。`--no-memory` 会同时禁止 LangMem 提取和角色记忆召回。
+
 ### RAG / MCP / Skill
 
 ```powershell

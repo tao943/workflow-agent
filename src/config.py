@@ -234,7 +234,8 @@ class ObservabilityConfig(BaseModel):
 class LangMemConfig(BaseModel):
     enabled: bool = False
     fallback_to_rule_consolidator: bool = True
-    max_candidates_per_run: int = 8
+    max_candidates_per_run: int = Field(default=8, ge=1, le=100)
+    recall_char_limit: int = Field(default=4000, ge=256, le=20000)
 
 
 class AppConfig(BaseModel):

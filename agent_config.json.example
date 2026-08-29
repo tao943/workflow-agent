@@ -16,7 +16,7 @@
     }
   },
   "observability": {"enabled": false, "service_name": "workflow-agent", "jsonl_fallback": "outputs/traces/agent.jsonl", "capture_prompt_content": false},
-  "langmem": {"enabled": false, "fallback_to_rule_consolidator": true, "max_candidates_per_run": 8},
+  "langmem": {"enabled": false, "fallback_to_rule_consolidator": true, "max_candidates_per_run": 8, "recall_char_limit": 4000},
   "checkpoint_path": "outputs/checkpoints/checkpoints.sqlite",
   "context": {
     "max_prompt_chars": 12000,

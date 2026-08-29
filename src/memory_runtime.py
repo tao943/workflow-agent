@@ -403,6 +403,9 @@ class MemoryRetriever:
         "verifier": ["semantic", "episodic"],
         "summarizer": ["semantic", "preference", "procedural"],
         "team_lead": ["procedural", "episodic", "preference", "semantic"],
+        "team_researcher": ["semantic", "procedural", "episodic", "preference"],
+        "team_builder": ["procedural", "episodic", "semantic", "preference"],
+        "team_reviewer": ["semantic", "episodic", "procedural", "preference"],
     }
 
     def __init__(self, store: MemoryStore, reranker: EmbeddingReranker | None = None) -> None:

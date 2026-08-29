@@ -115,7 +115,7 @@ class NoOpTraceProvider(JsonlTraceProvider):
 class OpenTelemetryTraceProvider(JsonlTraceProvider):
     """OpenTelemetry exporter with JSONL fallback; exporter failures never break work."""
 
-    def __init__(self, path: str | Path, service_name: str = "workflow-agent", otlp_endpoint: str | None = None) -> None:
+    def __init__(self, path: str | Path, service_name: str = "workflow-agent", otlp_endpoint: str | None = None, *, force_flush: bool = False) -> None:
         super().__init__(path, service_name)
         from opentelemetry import trace
         from opentelemetry.sdk.resources import Resource
@@ -124,6 +124,7 @@ class OpenTelemetryTraceProvider(JsonlTraceProvider):
         resource = Resource.create({"service.name": service_name})
         provider = TracerProvider(resource=resource)
         self._tracer_provider = provider
+        self._force_flush = force_flush
         if otlp_endpoint:
             try:
                 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -141,10 +142,14 @@ class OpenTelemetryTraceProvider(JsonlTraceProvider):
 
     @contextmanager
     def start_span(self, name: str, attributes: dict[str, Any] | None = None) -> Iterator[_Span]:
-        with self._tracer.start_as_current_span(name, attributes=redact_sensitive(attributes or {})) as otel_span:
-            with super().start_span(name, attributes) as span:
-                span.identifiers = TraceIdentifiers(format(otel_span.get_span_context().trace_id, "032x"), format(otel_span.get_span_context().span_id, "016x"), span.identifiers.parent_span_id)
-                yield span
+        try:
+            with self._tracer.start_as_current_span(name, attributes=redact_sensitive(attributes or {})) as otel_span:
+                with super().start_span(name, attributes) as span:
+                    span.identifiers = TraceIdentifiers(format(otel_span.get_span_context().trace_id, "032x"), format(otel_span.get_span_context().span_id, "016x"), span.identifiers.parent_span_id)
+                    yield span
+        finally:
+            if self._force_flush:
+                self._tracer_provider.force_flush()
 
 
 def build_trace_provider(config, output_dir: str = "outputs"):
@@ -152,5 +157,5 @@ def build_trace_provider(config, output_dir: str = "outputs"):
         return NoOpTraceProvider()
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if endpoint:
-        return OpenTelemetryTraceProvider(getattr(config, "jsonl_fallback", f"{output_dir}/traces/agent.jsonl"), getattr(config, "service_name", "workflow-agent"), endpoint)
+        return OpenTelemetryTraceProvider(getattr(config, "jsonl_fallback", f"{output_dir}/traces/agent.jsonl"), getattr(config, "service_name", "workflow-agent"), endpoint, force_flush=os.getenv("OTEL_FORCE_FLUSH_ON_SPAN_END") == "1")
     return JsonlTraceProvider(getattr(config, "jsonl_fallback", f"{output_dir}/traces/agent.jsonl"), getattr(config, "service_name", "workflow-agent"))

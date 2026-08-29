@@ -64,6 +64,8 @@ def _select_tool(
                 "path": _extract_output_path(user_task) or "outputs/agent_output.md",
                 "content": _extract_write_content(user_task, description),
             }
+        if planned_tool == "apply_patch":
+            return planned_tool, {"patch": _extract_patch(description)}
         if planned_tool == "list_files":
             return planned_tool, {"path": "."}
         if planned_tool == "search_files":
@@ -112,6 +114,11 @@ def _extract_write_content(user_task: str, description: str) -> str:
                 if content:
                     return content
     return description
+
+
+def _extract_patch(description: str) -> str:
+    marker = description.find("*** Begin Patch")
+    return description[marker:] if marker >= 0 else description
 
 
 def _extract_query(text: str) -> str:

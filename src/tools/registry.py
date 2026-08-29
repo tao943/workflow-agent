@@ -2,6 +2,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -107,6 +108,19 @@ def _write_file_execute(args: dict[str, Any], context: ToolContext) -> ToolResul
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return ToolResult(title=f"写入文件 {target.name}", output=f"已写入：{target}", metadata={"path": str(target)}, attachments=[str(target)])
+
+
+def _apply_patch_execute(args: dict[str, Any], context: ToolContext) -> ToolResult:
+    patch = _require_text(args, "patch")
+    if ".." in patch or any(token in patch.lower() for token in (".env", "outputs/", "outputs\\", ".git/", ".git\\")):
+        raise ValueError("补丁包含被禁止的运行时、凭据或越界路径。")
+    checked = subprocess.run(["git", "apply", "--check", "--whitespace=nowarn", "-"], input=patch, text=True, encoding="utf-8", capture_output=True, check=False)
+    if checked.returncode:
+        raise ValueError(f"补丁校验失败：{checked.stderr[-1000:]}")
+    applied = subprocess.run(["git", "apply", "--whitespace=nowarn", "-"], input=patch, text=True, encoding="utf-8", capture_output=True, check=False)
+    if applied.returncode:
+        raise ValueError(f"补丁应用失败：{applied.stderr[-1000:]}")
+    return ToolResult(title="补丁已应用", output="已通过 git apply 校验并应用补丁。", metadata={"patch_bytes": len(patch.encode("utf-8"))})
 
 
 def _list_files_execute(args: dict[str, Any], context: ToolContext) -> ToolResult:
@@ -478,6 +492,18 @@ TOOL_REGISTRY = {
             )
         ],
         provenance_policy="warn",
+    ),
+    "apply_patch": ToolSpec(
+        name="apply_patch",
+        description="在当前项目工作区安全校验并应用 unified diff 补丁",
+        parameters={"patch": "unified diff 文本"},
+        output_schema=OUTPUT_SCHEMA,
+        permissions=["write:patch"],
+        danger_level="confirm",
+        examples=["*** Begin Patch\n*** Update File: src/example.py"],
+        timeout_seconds=30,
+        truncate_policy={"max_chars": 4000},
+        execute=_apply_patch_execute,
     ),
     "list_files": ToolSpec(
         name="list_files",

@@ -77,6 +77,7 @@ def _fallback_plan(user_task: str, enabled_tools: set[str] | None = None, agent:
         "search_files": "搜索项目代码或文件",
         "rag_search": "检索知识库证据",
         "write_file": "写入请求的输出文件",
+        "apply_patch": "应用经过校验的 unified diff 代码补丁",
         "notes_tool": "保存笔记",
     }
     steps: list[PlanStep] = []
