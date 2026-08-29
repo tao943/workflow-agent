@@ -12,6 +12,7 @@ from uuid import uuid4
 from src.config import ContextHarnessConfig
 from src.memory_runtime import MemoryGovernanceRuntime
 from src.storage import Storage
+from src.observability import NoOpTraceProvider
 
 
 ContextKind = Literal["tool_result", "message", "evidence", "summary", "member_report"]
@@ -277,6 +278,7 @@ class ContextHarness:
         config: ContextHarnessConfig | None = None,
         root: str | Path = "outputs/context",
         memory_db_path: str | Path | None = None,
+        trace_provider=None,
     ) -> None:
         self.storage = storage
         self.config = config or ContextHarnessConfig()
@@ -287,8 +289,13 @@ class ContextHarness:
             storage=storage,
         )
         self._cache: dict[str, tuple[float, ContextBundle]] = {}
+        self.trace_provider = trace_provider or NoOpTraceProvider()
 
     def prepare(self, request: ContextRequest) -> ContextBundle:
+        with self.trace_provider.start_span("context.prepare", {"context.session_id": request.session_id, "context.node": request.node}):
+            return self._prepare_impl(request)
+
+    def _prepare_impl(self, request: ContextRequest) -> ContextBundle:
         key = self._cache_key(request)
         cached = self._cache.get(key)
         if cached and time.time() - cached[0] <= self.config.retrieval_cache_ttl_seconds:

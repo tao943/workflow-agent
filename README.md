@@ -136,6 +136,25 @@ python -m src.main --explain-memory-retrieval "LangGraph checkpoint"
 python -m src.main "临时任务，不读写记忆" --no-memory
 ```
 
+### LangMem 生产链路
+
+LangMem 默认关闭，避免在未配置真实模型时产生额外调用和费用。启用方式：
+
+```json
+{
+  "langmem": {
+    "enabled": true,
+    "fallback_to_rule_consolidator": true,
+    "max_candidates_per_run": 8,
+    "recall_char_limit": 4000
+  }
+}
+```
+
+启用后，Lead 只把状态为 completed 且通过 Evidence Gate 的 Researcher、Builder、Reviewer 结果交给 LangMem。LangMem 使用当前运行的真实 LLM 提取候选，不直接写数据库；候选仍必须经过 `MemoryPolicyGate`，并分别写入 `project:team:researcher`、`project:team:builder`、`project:team:reviewer`。Lead 生成的稳定 Evidence ID 才能激活证据记忆，远程 Agent 自报的 Evidence ID 不会被信任。
+
+后续任务只召回当前角色命名空间中的 active 记忆，最多注入 `recall_char_limit` 个字符，并标记为不可信参考上下文。提取失败时，`fallback_to_rule_consolidator=true` 会按角色使用原有规则式 Consolidator；关闭该选项则记录 `memory_extraction_error` 后继续主任务。`--no-memory` 会同时禁止 LangMem 提取和角色记忆召回。
+
 ### RAG / MCP / Skill
 
 ```powershell
@@ -263,3 +282,35 @@ python -m src.main "检索知识库中的 checkpoint 资料" --agent research --
 ## 说明
 
 本项目用于学习和实践 Agent Runtime 工程化，不建议直接用于生产环境。若接入外部 API、MCP Server、Skill 代码或 Docker 沙箱，请先确认权限规则和本地环境安全边界。
+# A2A 角色服务
+
+Researcher、Builder、Reviewer 可作为独立 HTTP 进程运行。配置 `agent_config.json` 中的 `a2a.agents.<role>.workspace_root` 必须指向绝对隔离目录；Token 仅通过 `A2A_<ROLE>_TOKEN` 环境变量提供。非回环端点使用 HTTPS，明文 HTTP 仅用于本机开发。
+
+```powershell
+python -m src.main --serve-a2a-role researcher --host 127.0.0.1 --port 8101
+python -m src.main --serve-a2a-role builder --host 127.0.0.1 --port 8102
+python -m src.main --serve-a2a-role reviewer --host 127.0.0.1 --port 8103
+python -m src.main --a2a-agents --format json
+python -m src.main --doctor-observability --format json
+```
+
+Trace 默认写入 `outputs/traces/agent.jsonl`；设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 后可接入 OTLP。LangMem 只生成候选记忆，最终仍由 `MemoryPolicyGate` 决定是否激活。Builder 远程失败不会自动在 Lead 工作区重做。
+
+## 本地 OTLP + Jaeger
+
+开发和集成测试可以使用项目附带的 Docker Compose 观测栈：
+
+```powershell
+docker compose -f docker-compose.otel.yml up -d
+$env:OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318/v1/traces"
+$env:OTEL_SERVICE_NAME="workflow-agent"
+python -m src.main --doctor-observability --format json
+```
+
+Jaeger UI 位于 [http://127.0.0.1:16686](http://127.0.0.1:16686)。Collector 接收 OTLP HTTP `4318` 和 gRPC `4317`，再转发到 Jaeger。停止服务：
+
+```powershell
+docker compose -f docker-compose.otel.yml down
+```
+
+该 Compose 文件用于本地开发/集成测试，不提供生产级持久化、TLS 或认证；生产环境应使用受保护的远程 Collector。

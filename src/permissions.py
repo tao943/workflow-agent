@@ -48,15 +48,47 @@ def request_permission(
         storage.add_permission(session_id, decision.permission, decision.pattern, "deny", scope="always", source="config")
         return False
 
+    storage.add_event(
+        session_id,
+        "permission.requested",
+        {
+            "permission": decision.permission,
+            "pattern": decision.pattern,
+            "description": description,
+            "action": decision.action,
+        },
+    )
+
     if auto_approve:
         storage.add_permission(session_id, decision.permission, decision.pattern, "allow", scope="once", source="user")
+        storage.add_event(
+            session_id,
+            "permission.replied",
+            {"permission": decision.permission, "pattern": decision.pattern, "approved": True, "source": "auto_approve"},
+        )
         return True
 
     storage.add_permission(session_id, decision.permission, decision.pattern, "ask", scope="once", source="runtime")
     if output_format == "json":
+        storage.add_event(
+            session_id,
+            "permission.replied",
+            {"permission": decision.permission, "pattern": decision.pattern, "approved": False, "source": "non_interactive"},
+        )
         return False
     if not sys.stdin.isatty():
+        storage.add_event(
+            session_id,
+            "permission.replied",
+            {"permission": decision.permission, "pattern": decision.pattern, "approved": False, "source": "non_interactive"},
+        )
         return False
 
     answer = input(f"Agent 请求权限 {decision.permission}:{decision.pattern}（{description}），是否允许？y/n: ")
-    return answer.strip().lower() in {"y", "yes"}
+    approved = answer.strip().lower() in {"y", "yes"}
+    storage.add_event(
+        session_id,
+        "permission.replied",
+        {"permission": decision.permission, "pattern": decision.pattern, "approved": approved, "source": "user"},
+    )
+    return approved

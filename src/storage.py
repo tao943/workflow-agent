@@ -203,6 +203,30 @@ class Storage:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS a2a_tasks (
+                    team_run_id TEXT NOT NULL,
+                    logical_task_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    business_attempt INTEGER NOT NULL,
+                    execution_id TEXT NOT NULL UNIQUE,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    transport_retry_count INTEGER NOT NULL DEFAULT 0,
+                    context_id TEXT NOT NULL,
+                    remote_task_id TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (team_run_id, logical_task_id, business_attempt)
+                );
+                CREATE TABLE IF NOT EXISTS a2a_artifacts (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_column(conn, "permissions", "scope", "TEXT NOT NULL DEFAULT 'once'")
@@ -222,6 +246,22 @@ class Storage:
         columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def upsert_a2a_task(self, *, team_run_id: str, logical_task_id: str, role: str, business_attempt: int, execution_id: str, idempotency_key: str, transport_retry_count: int, context_id: str, remote_task_id: str, endpoint: str, status: str) -> None:
+        with self._connect() as conn:
+            conn.execute("""INSERT INTO a2a_tasks (team_run_id, logical_task_id, role, business_attempt, execution_id, idempotency_key, transport_retry_count, context_id, remote_task_id, endpoint, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(team_run_id, logical_task_id, business_attempt) DO UPDATE SET transport_retry_count=excluded.transport_retry_count, context_id=excluded.context_id, remote_task_id=excluded.remote_task_id, status=excluded.status, updated_at=excluded.updated_at""", (team_run_id, logical_task_id, role, business_attempt, execution_id, idempotency_key, transport_retry_count, context_id, remote_task_id, endpoint, status, _now()))
+
+    def get_a2a_task_by_execution_id(self, execution_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM a2a_tasks WHERE execution_id = ?", (execution_id,)).fetchone()
+            return dict(row) if row else None
+
+    def list_a2a_tasks(self, execution_id: str | None = None) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM a2a_tasks WHERE (? IS NULL OR execution_id = ?)", (execution_id, execution_id)).fetchall()
+            return [dict(row) for row in rows]
 
     def create_session(self, session_id: str, title: str, agent: str, parent_id: str | None = None) -> None:
         now = _now()

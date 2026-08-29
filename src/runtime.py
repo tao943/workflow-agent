@@ -11,6 +11,7 @@ from src.memory import load_memory, remember_interaction, save_memory
 from src.memory_runtime import MemoryGovernanceRuntime
 from src.session import create_or_continue_session, new_id, new_session_id
 from src.storage import Storage
+from src.observability import build_trace_provider
 
 
 @dataclass
@@ -43,6 +44,7 @@ class RuntimeOptions:
     team: str | None = None
     context_namespace: str | None = None
     consolidate_memory: bool = True
+    workspace_root: str | None = None
 
 
 class AgentRuntime:
@@ -52,8 +54,10 @@ class AgentRuntime:
         llm=None,
         graph_builder: Callable = build_graph,
         storage: Storage | None = None,
+        trace_provider=None,
     ) -> None:
         self.config = config
+        self.trace_provider = trace_provider or build_trace_provider(config.observability, config.output_dir)
         self.llm = llm
         self.graph_builder = graph_builder
         self.storage = storage or Storage(self.storage_path)
@@ -101,6 +105,10 @@ class AgentRuntime:
         )
 
     def run(self, options: RuntimeOptions) -> RunResult:
+        with self.trace_provider.start_span("agent.run", {"agent.profile": self.config.default_agent, "agent.team": options.team or "", "session.id": options.session_id or ""}):
+            return self._run(options)
+
+    def _run(self, options: RuntimeOptions) -> RunResult:
         if options.team:
             if not options.task:
                 raise ValueError("task is required for team mode")

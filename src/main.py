@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import os
 import sys
 from dataclasses import asdict
 
@@ -130,6 +131,11 @@ def main() -> int:
     parser.add_argument("--suite", default="", help="Official benchmark suite/environment")
     parser.add_argument("--limit", type=int, default=None, help="Limit official benchmark cases")
     parser.add_argument("--trials", type=int, default=None, help="Official benchmark trial count")
+    parser.add_argument("--serve-a2a-role", choices=["researcher", "builder", "reviewer"])
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8101)
+    parser.add_argument("--a2a-agents", action="store_true")
+    parser.add_argument("--doctor-observability", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -143,6 +149,10 @@ def main() -> int:
 
         load_dotenv()
         app_config = load_config(args.config, args.agent)
+        if args.serve_a2a_role:
+            from src.a2a_service import serve_role
+            serve_role(app_config, args.serve_a2a_role, args.host, args.port)
+            return 0
         if args.deepeval_mode:
             app_config.evals.deepeval_mode = args.deepeval_mode
         llm = None if args.offline else _build_llm(_resolve_model(args.model, app_config.model))
@@ -152,6 +162,18 @@ def main() -> int:
         print("依赖未安装。请先运行：pip install -r requirements.txt")
         print(f"错误详情：{exc}")
         return 1
+
+    if args.a2a_agents:
+        items = []
+        for role, agent in app_config.a2a.agents.items():
+            items.append({"role": role, "enabled": agent.enabled, "agent_card_url": agent.agent_card_url, "workspace_root": agent.workspace_root})
+        _print(args.format, json.dumps({"items": items}, ensure_ascii=False), {"items": items})
+        return 0
+
+    if args.doctor_observability:
+        payload = {"provider": type(runtime.trace_provider).__name__, "jsonl_fallback": app_config.observability.jsonl_fallback, "otlp_configured": bool(os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))}
+        _print(args.format, json.dumps(payload, ensure_ascii=False), payload)
+        return 0
 
     if args.list_checkpoints:
         checkpoints = list_checkpoints(args.list_checkpoints, db_path=app_config.checkpoint_path)

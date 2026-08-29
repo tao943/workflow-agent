@@ -2,6 +2,21 @@
   "model": "gpt-4o-mini",
   "default_agent": "build",
   "output_dir": "outputs",
+  "a2a": {
+    "enabled": false,
+    "request_timeout_seconds": 30,
+    "task_timeout_seconds": 600,
+    "max_retries": 2,
+    "allow_insecure_http": false,
+    "artifact_max_bytes": 52428800,
+    "agents": {
+      "researcher": {"enabled": false, "agent_card_url": "http://127.0.0.1:8101/.well-known/agent-card.json", "token_env": "A2A_RESEARCHER_TOKEN", "allow_local_fallback": true, "workspace_root": "./workspaces/researcher"},
+      "builder": {"enabled": false, "agent_card_url": "http://127.0.0.1:8102/.well-known/agent-card.json", "token_env": "A2A_BUILDER_TOKEN", "allow_local_fallback": false, "workspace_root": "./workspaces/builder"},
+      "reviewer": {"enabled": false, "agent_card_url": "http://127.0.0.1:8103/.well-known/agent-card.json", "token_env": "A2A_REVIEWER_TOKEN", "allow_local_fallback": true, "workspace_root": "./workspaces/reviewer"}
+    }
+  },
+  "observability": {"enabled": false, "service_name": "workflow-agent", "jsonl_fallback": "outputs/traces/agent.jsonl", "capture_prompt_content": false},
+  "langmem": {"enabled": false, "fallback_to_rule_consolidator": true, "max_candidates_per_run": 8, "recall_char_limit": 4000},
   "checkpoint_path": "outputs/checkpoints/checkpoints.sqlite",
   "context": {
     "max_prompt_chars": 12000,

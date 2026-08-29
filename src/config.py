@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
+import ipaddress
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 PermissionAction = Literal["allow", "ask", "deny"]
@@ -185,6 +187,57 @@ class BenchmarkConfig(BaseModel):
     protocol_output_dir: str = "outputs/benchmarks/official"
 
 
+class A2ARemoteAgentConfig(BaseModel):
+    enabled: bool = False
+    agent_card_url: str = ""
+    token_env: str = ""
+    allow_local_fallback: bool = False
+    workspace_root: str = "."
+
+
+class A2AConfig(BaseModel):
+    enabled: bool = False
+    request_timeout_seconds: int = 30
+    task_timeout_seconds: int = 600
+    max_retries: int = 2
+    artifact_max_bytes: int = 50 * 1024 * 1024
+    agent_card_ttl_seconds: int = 300
+    allow_insecure_http: bool = False
+    agents: dict[str, A2ARemoteAgentConfig] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_endpoint_transport(self):
+        for role, agent in self.agents.items():
+            if not agent.enabled or not agent.agent_card_url:
+                continue
+            parsed = urlparse(agent.agent_card_url)
+            if parsed.scheme not in {"http", "https"}:
+                raise ValueError(f"A2A {role} endpoint must use HTTP(S)")
+            host = (parsed.hostname or "").lower()
+            loopback = host in {"localhost", "127.0.0.1", "::1"}
+            try:
+                loopback = loopback or ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                pass
+            if parsed.scheme == "http" and not loopback and not self.allow_insecure_http:
+                raise ValueError("non-loopback A2A endpoints require HTTPS")
+        return self
+
+
+class ObservabilityConfig(BaseModel):
+    enabled: bool = False
+    service_name: str = "workflow-agent"
+    jsonl_fallback: str = "outputs/traces/agent.jsonl"
+    capture_prompt_content: bool = False
+
+
+class LangMemConfig(BaseModel):
+    enabled: bool = False
+    fallback_to_rule_consolidator: bool = True
+    max_candidates_per_run: int = Field(default=8, ge=1, le=100)
+    recall_char_limit: int = Field(default=4000, ge=256, le=20000)
+
+
 class AppConfig(BaseModel):
     model: str = "gpt-4o-mini"
     default_agent: str = "build"
@@ -198,6 +251,9 @@ class AppConfig(BaseModel):
     benchmarks: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
     team_mode: TeamModeConfig = Field(default_factory=TeamModeConfig)
     skill_runtime: SkillRuntimeConfig = Field(default_factory=SkillRuntimeConfig)
+    a2a: A2AConfig = Field(default_factory=A2AConfig)
+    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
+    langmem: LangMemConfig = Field(default_factory=LangMemConfig)
     permissions: list[PermissionRule] = Field(default_factory=list)
     skills: dict[str, bool] = Field(default_factory=dict)
     tools: dict[str, bool] = Field(default_factory=dict)

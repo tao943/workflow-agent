@@ -403,6 +403,9 @@ class MemoryRetriever:
         "verifier": ["semantic", "episodic"],
         "summarizer": ["semantic", "preference", "procedural"],
         "team_lead": ["procedural", "episodic", "preference", "semantic"],
+        "team_researcher": ["semantic", "procedural", "episodic", "preference"],
+        "team_builder": ["procedural", "episodic", "semantic", "preference"],
+        "team_reviewer": ["semantic", "episodic", "procedural", "preference"],
     }
 
     def __init__(self, store: MemoryStore, reranker: EmbeddingReranker | None = None) -> None:
@@ -660,6 +663,14 @@ class MemoryGovernanceRuntime:
                         {"memory_id": record.supersedes, "superseded_by": record.id},
                     )
             self.storage.add_event(session_id, "memory.consolidated", {"records": len(records)})
+        return records
+
+    def evaluate_candidates(self, candidates: list[MemoryCandidate], session_id: str = "") -> list[MemoryRecord]:
+        records = [self.policy.evaluate(candidate) for candidate in candidates]
+        if self.storage and session_id:
+            for record in records:
+                event = "memory.promoted" if record.status == "active" else "memory.candidate.created"
+                self.storage.add_event(session_id, event, asdict(record))
         return records
 
     def hot_write_user_task(self, user_task: str, namespace: str = "project", session_id: str = "") -> MemoryRecord | None:
