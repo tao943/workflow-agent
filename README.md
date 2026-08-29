@@ -1,5 +1,7 @@
 # Workflow Agent Runtime
 
+[GitHub Repository](https://github.com/tao943/workflow-agent) · [Pull Requests](https://github.com/tao943/workflow-agent/pulls)
+
 一个基于 **Python + LangGraph** 的工程化 Workflow Agent 项目。它从教学型「规划 -> 执行 -> 检查 -> 总结」流程逐步演进为一个可审计、可扩展、可测评的 **Agent Runtime**，支持单 Agent、Team Mode、多工具来源、RAG、MCP、Skill Plugin、Context Harness、长期记忆和 Benchmark 评估。
 
 项目定位不是“万能聊天机器人”，而是一个用于学习和实践 Agent 工程化能力的 CLI Runtime：
@@ -18,13 +20,16 @@ User Task
 
 - **单 Agent 工作流**：基于 LangGraph 实现 Planner、Executor、Verifier、Summarizer 节点，支持结构化 PlanStep、最大轮数限制和离线 fallback。
 - **多 Agent Team Mode**：支持 Lead Agent 调度 Planner、Researcher、Builder、Reviewer，使用任务图 / DAG 执行、成员上下文隔离、Reviewer 验收和 Lead Synthesizer 汇总。
+- **A2A 独立部署**：Researcher、Builder、Reviewer 均可通过官方 A2A SDK 以独立 HTTP 进程运行，支持 Agent Card、任务幂等、Artifact 校验、跨进程恢复和受控本地 fallback。
 - **统一工具运行时**：通过 `ToolRuntime` 和 `ToolProvider` 统一管理 built-in tools、RAG、MCP、Skill Plugin、Claw 动态工具。
 - **权限与安全边界**：支持 `allow / ask / deny` 权限规则，写文件、RAG、MCP、Skill、Docker 等高风险能力必须经过权限系统。
 - **工具幻觉治理**：通过 Evidence Gate 和 Argument Provenance Gate 校验工具证据和关键参数来源，避免模型凭空声明“已读取、已保存、已检索”。
 - **Context Harness**：支持长工具结果卸载、artifact 索引、结构化 summary、上下文缓存、反馈监督和 Team 成员上下文隔离。
 - **Memory Governance**：支持 semantic、episodic、procedural、preference 四类长期记忆，使用 SQLite FTS5 / BM25 召回，并保留 trust、confidence、candidate / active / invalidated 状态。
+- **LangMem 长期记忆**：将成功的角色结果提取为候选记忆，经 Evidence Gate 和 `MemoryPolicyGate` 审核后再激活，按角色命名空间隔离召回，提取失败可降级到规则式 consolidator。
 - **RAG / MCP / Skill 扩展**：支持真实 RAG 接入、MCP fetch / search 类工具、项目内 Skill Package，以及 Python subprocess / Docker 沙箱执行。
-- **Eval 与 Benchmark**：内置本地 Eval Harness、DeepEval 风格指标适配、Claw-Eval workflow，覆盖工具正确性、参数正确性、答案证据覆盖和任务完成率。
+- **OpenInference 可观测性**：基于 OpenTelemetry 导出 OTLP trace，记录 LangGraph、MCP、A2A 和模型调用链路，可接入本地 Collector + Jaeger。
+- **Eval 与 Benchmark**：内置本地 Eval Harness、DeepEval 风格指标适配、Claw-Eval workflow 和 SWE-bench Lite 官方 Harness，覆盖工具正确性、参数正确性、答案证据覆盖和任务完成率。
 
 ## 项目结构
 
@@ -271,7 +276,17 @@ python -m src.main "总结 README 并写入 outputs/summary.md" --agent build --
 python -m src.main "检索知识库中的 checkpoint 资料" --agent research --yes
 ```
 
-## 当前重点优化方向
+## 验证状态
+
+最近一次本地回归结果：
+
+- `python -m pytest -q`：239 passed，7 skipped。
+- A2A + OTLP 真实集成测试：20 passed。
+- SWE-bench Lite 五个同仓库 case：通过率 97.37%–100%；Jaeger trace 与 OpenInference ChatOpenAI span 均为 5/5 可验证。
+
+评测输出默认写入 `outputs/`，该目录已加入 `.gitignore`，不会被提交到仓库。完整运行记录和调优审计可在本地生成。
+
+## 后续路线图
 
 - 更精细的 Team Mode 动态路由与任务图重规划。
 - 更稳定的 Answer Synthesizer 与 evidence-aware final answer。
@@ -282,7 +297,7 @@ python -m src.main "检索知识库中的 checkpoint 资料" --agent research --
 ## 说明
 
 本项目用于学习和实践 Agent Runtime 工程化，不建议直接用于生产环境。若接入外部 API、MCP Server、Skill 代码或 Docker 沙箱，请先确认权限规则和本地环境安全边界。
-# A2A 角色服务
+## A2A 角色服务
 
 Researcher、Builder、Reviewer 可作为独立 HTTP 进程运行。配置 `agent_config.json` 中的 `a2a.agents.<role>.workspace_root` 必须指向绝对隔离目录；Token 仅通过 `A2A_<ROLE>_TOKEN` 环境变量提供。非回环端点使用 HTTPS，明文 HTTP 仅用于本机开发。
 
